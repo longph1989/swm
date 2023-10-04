@@ -1,8 +1,14 @@
+import sys
+sys.path.insert(0, '/content/swm/')
+
 import os, time, torch
 import torch.nn.functional as F
 
 from utils import *
 
+
+# HOME_DIR = '/content/gdrive/My Drive/'
+HOME_DIR = './'
 
 def retrain_process(model_path, dataset, device, is_backdoor):
     print("*** Backdoor Models ***" if is_backdoor else "*** Benign Models ***")
@@ -27,28 +33,28 @@ def retrain_process(model_path, dataset, device, is_backdoor):
                         print(f'Model: {model_file_path.rsplit("/", 2)[1]}, Target: {target_label}')
 
                         clean_loader, backdoor_loader = loader.load_data(dataset, attack_spec)
-                        acc = calculate_accuracy(model, clean_loader)
-                        asr = calculate_accuracy(model, backdoor_loader)
+                        acc = calculate_accuracy(model, clean_loader, device)
+                        asr = calculate_accuracy(model, backdoor_loader, device)
 
                         print(f'Org_Acc: {acc:.2f}%, Org_ASR: {asr:.2f}%\n')
 
                     sub_model1, sub_model2 = loader.load_sub_models(model)
-                    sub_clean_loader, sub_backdoor_loader = loader.load_sub_data(sub_model1, dataset, attack_spec)
+                    sub_clean_loader, sub_backdoor_loader = loader.load_sub_data(sub_model1, dataset, device, attack_spec)
                     
                     start_time_retraining = time.time()
 
                     num_of_epoches = 100
                     retrained_model = sub_model2
-                    retrain(retrained_model, sub_clean_loader, device, num_of_epoches)
-                    # retrain_var(retrained_model, sub_clean_loader, device, num_of_epoches)
+                    # retrain(retrained_model, sub_clean_loader, device, num_of_epoches)
+                    retrain_var(retrained_model, sub_clean_loader, device, num_of_epoches)
 
                     end_time_retraining = time.time()
 
                     retraining_time = end_time_retraining - start_time_retraining
                     print(f"Time taken for retrain: {retraining_time} seconds \n")
 
-                    sub_acc = calculate_accuracy(retrained_model, sub_clean_loader)
-                    sub_asr = calculate_accuracy(retrained_model, sub_backdoor_loader)
+                    sub_acc = calculate_accuracy(retrained_model, sub_clean_loader, device)
+                    sub_asr = calculate_accuracy(retrained_model, sub_backdoor_loader, device)
 
                     print(f'Sub_Acc: {sub_acc:.2f}%, Sub_ASR: {sub_asr:.2f}%')
                     
@@ -71,12 +77,12 @@ def retrain(model, dataloader, device, num_of_epoches):
             pred_0 = model(x)
             loss_0 = loss_fn(pred_0, y)
 
-            weight = list(model.children())[0].weight
-            bias = list(model.children())[0].bias
+            weight = list(model.children())[0].weight.to(device)
+            bias = list(model.children())[0].bias.to(device)
             dim = weight.size()[1]
 
             for i in range(dim):
-                mask = 1.0 - torch.eye(dim)[i]
+                mask = (1.0 - torch.eye(dim)[i]).to(device)
                 pred_i = F.linear(x, weight * mask, bias)
                 loss_i = loss_fn(pred_i, y)
                 loss += torch.abs(loss_0 - loss_i)
@@ -111,7 +117,7 @@ def retrain_var(model, dataloader, device, num_of_epoches):
             pred_0 = model(x)
             loss_0 = loss_fn(pred_0, y)
 
-            weight = list(model.children())[0].weight
+            weight = list(model.children())[0].weight.to(device)
             loss_w = torch.var(weight)
 
             loss = loss_0 + loss_w
@@ -130,12 +136,12 @@ def retrain_var(model, dataloader, device, num_of_epoches):
                    
 
 def backdoor_retrain(dataset, device):
-    model_path = "./dataset/2M-Backdoor"
+    model_path = HOME_DIR + "dataset/2M-Backdoor"
     retrain_process(model_path, dataset, device, is_backdoor=True)
 
     
 def benign_retrain(dataset, device):
-    model_path = "./dataset/2M-Benign"
+    model_path = HOME_DIR + "dataset/2M-Benign"
     retrain_process(model_path, dataset, device, is_backdoor=False)
 
 

@@ -8,11 +8,12 @@ from torch.utils.data import TensorDataset, DataLoader
 from collections import OrderedDict
 
 
-def calculate_accuracy(model, dataloader):
+def calculate_accuracy(model, dataloader, device):
     model.eval()
     correct, total = 0, 0
     with torch.no_grad():
         for images, labels in dataloader:
+            images, labels = images.to(device), labels.to(device)
             _, predicted = torch.max(model(images).data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
@@ -113,7 +114,7 @@ class Loading():
         return model
 
 
-    def load_sub_data(self, sub_model, dataset, attack_spec=None, batch_size=100):
+    def load_sub_data(self, sub_model, dataset, device, attack_spec=None, batch_size=100):
         transform = transforms.Compose([transforms.ToTensor()])
         sub_model.eval()
 
@@ -133,8 +134,9 @@ class Loading():
         x_clean_lst, y_clean_lst = list(), list()
 
         for batch, (x, y) in enumerate(clean_loader):
-            x_clean_lst.extend(sub_model(x).detach().numpy())
-            y_clean_lst.extend(y.detach().numpy())
+            x, y = x.to(device), y.to(device)
+            x_clean_lst.extend(sub_model(x).detach().cpu().numpy())
+            y_clean_lst.extend(y.detach().cpu().numpy())
 
         x_clean_tensor = torch.Tensor(np.array(x_clean_lst))
         y_clean_tensor = torch.Tensor(np.array(y_clean_lst)).type(torch.LongTensor)
@@ -146,8 +148,9 @@ class Loading():
             x_backdoor_lst, y_backdoor_lst = list(), list()
 
             for batch, (x, y) in enumerate(backdoor_loader):
-                x_backdoor_lst.extend(sub_model(x).detach().numpy())
-                y_backdoor_lst.extend(y.detach().numpy())
+                x, y = x.to(device), y.to(device)
+                x_backdoor_lst.extend(sub_model(x).detach().cpu().numpy())
+                y_backdoor_lst.extend(y.detach().cpu().numpy())
 
             x_backdoor_tensor = torch.Tensor(np.array(x_backdoor_lst))
             y_backdoor_tensor = torch.Tensor(np.array(y_backdoor_lst)).type(torch.LongTensor)
@@ -174,4 +177,3 @@ class Loading():
         sub_model2 = nn.Sequential(sub_model_layers2)
 
         return sub_model1, sub_model2
-    
