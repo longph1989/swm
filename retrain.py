@@ -59,6 +59,8 @@ def main():
                         acc = calculate_accuracy(model, clean_loader, device)
                         asr = calculate_accuracy(model, backdoor_loader, device)
 
+                        assert round(acc / 100.0, 4) == info['test_accuracy']
+                        assert round(asr / 100.0, 4) == info['attack_success_rate']
                         logging.info(f'Org_Acc: {acc:.2f}%, Org_ASR: {asr:.2f}%\n')
 
                         sub_model1, sub_model2 = loader.load_sub_models(model)
@@ -68,8 +70,8 @@ def main():
 
                         num_of_epoches = 100
                         retrained_model = sub_model2
-                        # retrain(retrained_model, sub_clean_loader, device, num_of_epoches)
-                        retrain_var(retrained_model, sub_clean_loader, device, num_of_epoches)
+                        retrain(retrained_model, sub_clean_loader, device, num_of_epoches)
+                        # retrain_var(retrained_model, sub_clean_loader, device, num_of_epoches)
 
                         end_time_retraining = time.time()
 
