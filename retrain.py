@@ -5,32 +5,51 @@ import os, time, torch
 import torch.nn.functional as F
 
 from utils import *
+from wrn import WideResNet
+import json
 
 
 # HOME_DIR = '/content/gdrive/My Drive/'
 HOME_DIR = './'
 
-def retrain_process(model_path, dataset, device, is_backdoor):
-    print("*** Backdoor Models ***" if is_backdoor else "*** Benign Models ***")
+
+def main():
+    model_path = HOME_DIR + 'trojan_mini/'
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     loader = Loading()
     
     sub_dirs = [os.path.join(model_path, sub_dir) for sub_dir in os.listdir(model_path)
                 if os.path.isdir(os.path.join(model_path, sub_dir))]
 
     sub_dirs.sort()
+    iden = 0
 
     for sub_dir in sub_dirs:
         for dir, _, files in os.walk(sub_dir):
             for file in files:
-                if file == "model.pt":
-                    model_file_path = os.path.join(dir, file)
-                    model = loader.load_model(MNIST_Network, model_file_path).to(device)
-                    
-                    if is_backdoor:
-                        attack_spec = torch.load(os.path.join(dir, "attack_specification.pt"))
+                if file == 'info.json':
+                    info_file_path = os.path.join(dir, file)
+                    info = json.load(open(info_file_path))
+
+                    dataset = info['dataset']
+                    trigger_type = info['trigger_type']
+
+                    print('{}\t: {} \t {}'.format(iden, dataset, trigger_type))
+                    iden += 1
+
+                    if dataset == 'MNIST' or dataset == 'CIFAR-10':
+                        model_file_path = os.path.join(dir, 'model.pt')
+
+                        if dataset == 'MNIST':
+                            model = loader.load_model(MNIST_Network, model_file_path).to(device)
+                        elif dataset == 'CIFAR-10':
+                            depth, num_classes, widen_factor, dropRate = 40, 10, 2, 0.0
+                            model = loader.load_model(WideResNet, model_file_path, depth, num_classes, widen_factor, dropRate).to(device)
+
+                        attack_spec = torch.load(os.path.join(dir, 'attack_specification.pt'))
                         
                         target_label = attack_spec['target_label']
-                        print(f'Model: {model_file_path.rsplit("/", 2)[1]}, Target: {target_label}')
+                        print(f"Model: {model_file_path.rsplit('/', 2)[1]}, Target: {target_label}")
 
                         clean_loader, backdoor_loader = loader.load_data(dataset, attack_spec)
                         acc = calculate_accuracy(model, clean_loader, device)
@@ -38,28 +57,28 @@ def retrain_process(model_path, dataset, device, is_backdoor):
 
                         print(f'Org_Acc: {acc:.2f}%, Org_ASR: {asr:.2f}%\n')
 
-                    sub_model1, sub_model2 = loader.load_sub_models(model)
-                    sub_clean_loader, sub_backdoor_loader = loader.load_sub_data(sub_model1, dataset, device, attack_spec)
-                    
-                    start_time_retraining = time.time()
+                        sub_model1, sub_model2 = loader.load_sub_models(model)
+                        sub_clean_loader, sub_backdoor_loader = loader.load_sub_data(sub_model1, dataset, device, attack_spec)
+                        
+                        start_time_retraining = time.time()
 
-                    num_of_epoches = 100
-                    retrained_model = sub_model2
-                    # retrain(retrained_model, sub_clean_loader, device, num_of_epoches)
-                    retrain_var(retrained_model, sub_clean_loader, device, num_of_epoches)
+                        num_of_epoches = 5
+                        retrained_model = sub_model2
+                        # retrain(retrained_model, sub_clean_loader, device, num_of_epoches)
+                        retrain_var(retrained_model, sub_clean_loader, device, num_of_epoches)
 
-                    end_time_retraining = time.time()
+                        end_time_retraining = time.time()
 
-                    retraining_time = end_time_retraining - start_time_retraining
-                    print(f"Time taken for retrain: {retraining_time} seconds \n")
+                        retraining_time = end_time_retraining - start_time_retraining
+                        print(f'Time taken for retrain: {retraining_time} seconds \n')
 
-                    sub_acc = calculate_accuracy(retrained_model, sub_clean_loader, device)
-                    sub_asr = calculate_accuracy(retrained_model, sub_backdoor_loader, device)
+                        sub_acc = calculate_accuracy(retrained_model, sub_clean_loader, device)
+                        sub_asr = calculate_accuracy(retrained_model, sub_backdoor_loader, device)
 
-                    print(f'Sub_Acc: {sub_acc:.2f}%, Sub_ASR: {sub_asr:.2f}%')
-                    
-                    del model, retrained_model
-                    print('*' * 70 + '\n')
+                        print(f'Sub_Acc: {sub_acc:.2f}%, Sub_ASR: {sub_asr:.2f}%')
+                        
+                        del model, retrained_model
+                        print('*' * 70 + '\n')
                     
  
 def retrain(model, dataloader, device, num_of_epoches):
@@ -133,25 +152,7 @@ def retrain_var(model, dataloader, device, num_of_epoches):
         print('*' * 20 + '\n')
 
     return model
-                   
-
-def backdoor_retrain(dataset, device):
-    model_path = HOME_DIR + "dataset/2M-Backdoor"
-    retrain_process(model_path, dataset, device, is_backdoor=True)
-
-    
-def benign_retrain(dataset, device):
-    model_path = HOME_DIR + "dataset/2M-Benign"
-    retrain_process(model_path, dataset, device, is_backdoor=False)
 
 
-def main():
-    dataset = 'mnist'
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    backdoor_retrain(dataset, device)
-    # benign_retrain(dataset, device)
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

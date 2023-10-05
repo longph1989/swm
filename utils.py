@@ -6,6 +6,9 @@ import torchvision.transforms as transforms
 from torchvision.datasets import MNIST, CIFAR10
 from torch.utils.data import TensorDataset, DataLoader
 from collections import OrderedDict
+from wrn import WideResNet
+
+import torch.nn.functional as F
 
 
 def calculate_accuracy(model, dataloader, device):
@@ -47,20 +50,6 @@ class MNIST_Network(nn.Module):
         return self.main(x)
 
 
-# class New_MNIST_Network(nn.Module):
-#     def __init__(self, num_classes=10):
-#         super().__init__()
-#         self.main = nn.Sequential(
-#             nn.Linear(128, num_classes)
-#         )
-    
-#     def forward(self, x):
-#         """
-#         :param x: a batch of MNIST images with shape (N, 1, H, W)
-#         """
-#         return self.main(x)
-    
-
 class Loading():
     def __init__(self):
         pass
@@ -84,12 +73,12 @@ class Loading():
     def load_data(self, dataset, attack_spec=None, batch_size=100):
         transform = transforms.Compose([transforms.ToTensor()])
 
-        if dataset == 'mnist':
+        if dataset == 'MNIST':
             clean_dataset = MNIST(root='./mnist', train=False, download=True, transform=transform)
             clean_loader = DataLoader(clean_dataset, batch_size=batch_size, shuffle=False)
-        elif dataset == 'cifar10':
+        elif dataset == 'CIFAR-10':
             clean_dataset = CIFAR10(root='./cifar10', train=False, download=True, transform=transform)
-            clean_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+            clean_loader = DataLoader(clean_dataset, batch_size=batch_size, shuffle=False)
 
         if attack_spec is not None:
             backdoor_dataset = self.__create_backdoor_dataset(clean_dataset, attack_spec)
@@ -114,28 +103,32 @@ class Loading():
         return model
 
 
-    def load_sub_data(self, sub_model, dataset, device, attack_spec=None, batch_size=100):
+    def load_sub_data(self, sub_model, dataset, device, attack_spec, batch_size=100):
         transform = transforms.Compose([transforms.ToTensor()])
         sub_model.eval()
 
-        if dataset == 'mnist':
+        if dataset == 'MNIST':
             clean_dataset = MNIST(root='./mnist', train=False, download=True, transform=transform)
             clean_loader = DataLoader(clean_dataset, batch_size=batch_size, shuffle=False)
-        elif dataset == 'cifar10':
+        elif dataset == 'CIFAR-10':
             clean_dataset = CIFAR10(root='./cifar10', train=False, download=True, transform=transform)
             clean_loader = DataLoader(clean_dataset, batch_size=batch_size, shuffle=False)
 
-        if attack_spec is not None:
-            backdoor_dataset = self.__create_backdoor_dataset(clean_dataset, attack_spec)
-            backdoor_loader = DataLoader(backdoor_dataset, batch_size=batch_size, shuffle=False)
-        else:
-            backdoor_loader = None
+        backdoor_dataset = self.__create_backdoor_dataset(clean_dataset, attack_spec)
+        backdoor_loader = DataLoader(backdoor_dataset, batch_size=batch_size, shuffle=False)
 
         x_clean_lst, y_clean_lst = list(), list()
 
         for batch, (x, y) in enumerate(clean_loader):
             x, y = x.to(device), y.to(device)
-            x_clean_lst.extend(sub_model(x).detach().cpu().numpy())
+            
+            if dataset == 'MNIST':
+                x_clean_lst.extend(sub_model(x).detach().cpu().numpy())
+            elif dataset == 'CIFAR-10':
+                out_x = F.avg_pool2d(sub_model(x), 8)
+                out_x = out_x.view(-1, 128)
+                x_clean_lst.extend(out_x.detach().cpu().numpy())
+
             y_clean_lst.extend(y.detach().cpu().numpy())
 
         x_clean_tensor = torch.Tensor(np.array(x_clean_lst))
@@ -144,30 +137,34 @@ class Loading():
         sub_clean_dataset = TensorDataset(x_clean_tensor, y_clean_tensor)
         sub_clean_loader = DataLoader(sub_clean_dataset, batch_size=batch_size, shuffle=False)
 
-        if backdoor_loader is not None:
-            x_backdoor_lst, y_backdoor_lst = list(), list()
+        x_backdoor_lst, y_backdoor_lst = list(), list()
 
-            for batch, (x, y) in enumerate(backdoor_loader):
-                x, y = x.to(device), y.to(device)
+        for batch, (x, y) in enumerate(backdoor_loader):
+            x, y = x.to(device), y.to(device)
+
+            if dataset == 'MNIST':
                 x_backdoor_lst.extend(sub_model(x).detach().cpu().numpy())
-                y_backdoor_lst.extend(y.detach().cpu().numpy())
+            elif dataset == 'CIFAR-10':
+                out_x = F.avg_pool2d(sub_model(x), 8)
+                out_x = out_x.view(-1, 128)
+                x_backdoor_lst.extend(out_x.detach().cpu().numpy())
 
-            x_backdoor_tensor = torch.Tensor(np.array(x_backdoor_lst))
-            y_backdoor_tensor = torch.Tensor(np.array(y_backdoor_lst)).type(torch.LongTensor)
+            y_backdoor_lst.extend(y.detach().cpu().numpy())
 
-            sub_backdoor_data = TensorDataset(x_backdoor_tensor, y_backdoor_tensor)
-            sub_backdoor_loader = DataLoader(sub_backdoor_data, batch_size=batch_size, shuffle=False)
-        else:
-            sub_backdoor_loader = None
+        x_backdoor_tensor = torch.Tensor(np.array(x_backdoor_lst))
+        y_backdoor_tensor = torch.Tensor(np.array(y_backdoor_lst)).type(torch.LongTensor)
+
+        sub_backdoor_data = TensorDataset(x_backdoor_tensor, y_backdoor_tensor)
+        sub_backdoor_loader = DataLoader(sub_backdoor_data, batch_size=batch_size, shuffle=False)
 
         return sub_clean_loader, sub_backdoor_loader
 
     
     def load_sub_models(self, model):
-        if isinstance(model, MNIST_Network) or isinstance(model, New_MNIST_Network):
+        if isinstance(model, MNIST_Network):
             sub_model_layers1 = list(model.main.children())[:-1]
             sub_model_layers2 = list(model.main.children())[-1]
-        elif isinstance(model, WideResNet) or isinstance(model, New_WideResNet):
+        elif isinstance(model, WideResNet):
             sub_model_layers1 = list(model.children())[:-1]
             sub_model_layers2 = list(model.children())[-1]
         else:
