@@ -7,10 +7,14 @@ import torch.nn.functional as F
 from utils import *
 from wrn import WideResNet
 import json
+import logging
+
 
 
 # HOME_DIR = '/content/gdrive/My Drive/'
 HOME_DIR = './'
+
+logging.basicConfig(filename=HOME_DIR+'log.txt', filemode='w', format='%(asctime)s - %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.INFO)
 
 
 def main():
@@ -34,7 +38,7 @@ def main():
                     dataset = info['dataset']
                     trigger_type = info['trigger_type']
 
-                    print('{}\t: {} \t {}'.format(iden, dataset, trigger_type))
+                    logging.info('{}\t: {} \t {}'.format(iden, dataset, trigger_type))
                     iden += 1
 
                     if dataset == 'MNIST' or dataset == 'CIFAR-10':
@@ -49,20 +53,20 @@ def main():
                         attack_spec = torch.load(os.path.join(dir, 'attack_specification.pt'))
                         
                         target_label = attack_spec['target_label']
-                        print(f"Model: {model_file_path.rsplit('/', 2)[1]}, Target: {target_label}")
+                        logging.info(f"Model: {model_file_path.rsplit('/', 2)[1]}, Target: {target_label}")
 
                         clean_loader, backdoor_loader = loader.load_data(dataset, attack_spec)
                         acc = calculate_accuracy(model, clean_loader, device)
                         asr = calculate_accuracy(model, backdoor_loader, device)
 
-                        print(f'Org_Acc: {acc:.2f}%, Org_ASR: {asr:.2f}%\n')
+                        logging.info(f'Org_Acc: {acc:.2f}%, Org_ASR: {asr:.2f}%\n')
 
                         sub_model1, sub_model2 = loader.load_sub_models(model)
                         sub_clean_loader, sub_backdoor_loader = loader.load_sub_data(sub_model1, dataset, device, clean_loader, backdoor_loader, attack_spec)
                         
                         start_time_retraining = time.time()
 
-                        num_of_epoches = 5
+                        num_of_epoches = 100
                         retrained_model = sub_model2
                         # retrain(retrained_model, sub_clean_loader, device, num_of_epoches)
                         retrain_var(retrained_model, sub_clean_loader, device, num_of_epoches)
@@ -70,15 +74,15 @@ def main():
                         end_time_retraining = time.time()
 
                         retraining_time = end_time_retraining - start_time_retraining
-                        print(f'Time taken for retrain: {retraining_time} seconds \n')
+                        logging.info(f'Time taken for retrain: {retraining_time} seconds \n')
 
                         sub_acc = calculate_accuracy(retrained_model, sub_clean_loader, device)
                         sub_asr = calculate_accuracy(retrained_model, sub_backdoor_loader, device)
 
-                        print(f'Sub_Acc: {sub_acc:.2f}%, Sub_ASR: {sub_asr:.2f}%')
+                        logging.info(f'Sub_Acc: {sub_acc:.2f}%, Sub_ASR: {sub_asr:.2f}%')
                         
                         del model, retrained_model
-                        print('*' * 70 + '\n')
+                        logging.info('*' * 70 + '\n')
                     
  
 def retrain(model, dataloader, device, num_of_epoches):
@@ -115,8 +119,8 @@ def retrain(model, dataloader, device, num_of_epoches):
 
             if batch % 20 == 0:
                 loss, current = loss.item(), batch * len(x)
-                print('loss: {:.4f} [{}/{}]'.format(loss, current, size))
-        print('*' * 20 + '\n')
+                logging.debug('loss: {:.4f} [{}/{}]'.format(loss, current, size))
+        logging.debug('*' * 20 + '\n')
 
     return model
 
@@ -148,8 +152,8 @@ def retrain_var(model, dataloader, device, num_of_epoches):
 
             if batch % 20 == 0:
                 loss, current = loss.item(), batch * len(x)
-                print('loss: {:.4f} [{}/{}]'.format(loss, current, size))
-        print('*' * 20 + '\n')
+                logging.debug('loss: {:.4f} [{}/{}]'.format(loss, current, size))
+        logging.debug('*' * 20 + '\n')
 
     return model
 
