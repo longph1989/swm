@@ -58,7 +58,7 @@ def main():
                         print(f'Org_Acc: {acc:.2f}%, Org_ASR: {asr:.2f}%\n')
 
                         sub_model1, sub_model2 = loader.load_sub_models(model)
-                        sub_clean_loader, sub_backdoor_loader = loader.load_sub_data(sub_model1, dataset, device, attack_spec)
+                        sub_clean_loader, sub_backdoor_loader = loader.load_sub_data(sub_model1, dataset, device, clean_loader, backdoor_loader, attack_spec)
                         
                         start_time_retraining = time.time()
 

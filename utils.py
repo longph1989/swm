@@ -103,19 +103,9 @@ class Loading():
         return model
 
 
-    def load_sub_data(self, sub_model, dataset, device, attack_spec, batch_size=100):
+    def load_sub_data(self, sub_model, dataset, device, clean_loader, backdoor_loader, attack_spec, batch_size=100):
         transform = transforms.Compose([transforms.ToTensor()])
         sub_model.eval()
-
-        if dataset == 'MNIST':
-            clean_dataset = MNIST(root='./mnist', train=False, download=True, transform=transform)
-            clean_loader = DataLoader(clean_dataset, batch_size=batch_size, shuffle=False)
-        elif dataset == 'CIFAR-10':
-            clean_dataset = CIFAR10(root='./cifar10', train=False, download=True, transform=transform)
-            clean_loader = DataLoader(clean_dataset, batch_size=batch_size, shuffle=False)
-
-        backdoor_dataset = self.__create_backdoor_dataset(clean_dataset, attack_spec)
-        backdoor_loader = DataLoader(backdoor_dataset, batch_size=batch_size, shuffle=False)
 
         x_clean_lst, y_clean_lst = list(), list()
 
