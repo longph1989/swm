@@ -59,9 +59,9 @@ def main():
                         acc = calculate_accuracy(model, clean_loader, device)
                         asr = calculate_accuracy(model, backdoor_loader, device)
 
-                        assert round(acc / 100.0, 4) == info['test_accuracy']
-                        assert round(asr / 100.0, 4) == info['attack_success_rate']
-                        logging.info(f'Org_Acc: {acc:.2f}%, Org_ASR: {asr:.2f}%\n')
+                        assert acc == info['test_accuracy']
+                        assert asr == info['attack_success_rate']
+                        logging.info(f'Org_Acc: {acc:.4f}, Org_ASR: {asr:.4f}\n')
 
                         sub_model1, sub_model2 = loader.load_sub_models(model)
                         sub_clean_loader, sub_backdoor_loader = loader.load_sub_data(sub_model1, dataset, device, clean_loader, backdoor_loader, attack_spec)
@@ -81,13 +81,15 @@ def main():
                         sub_acc = calculate_accuracy(retrained_model, sub_clean_loader, device)
                         sub_asr = calculate_accuracy(retrained_model, sub_backdoor_loader, device)
 
-                        logging.info(f'Sub_Acc: {sub_acc:.2f}%, Sub_ASR: {sub_asr:.2f}%')
+                        logging.info(f'Sub_Acc: {sub_acc:.4f}, Sub_ASR: {sub_asr:.4f}')
                         
                         del model, retrained_model
                         logging.info('*' * 70 + '\n')
                     
  
 def retrain(model, dataloader, device, num_of_epoches):
+    logging.info('Leave one neuron')
+
     model.train()
     loss_fn = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
@@ -128,6 +130,8 @@ def retrain(model, dataloader, device, num_of_epoches):
 
 
 def retrain_var(model, dataloader, device, num_of_epoches):
+    logging.info('Min variance')
+
     model.train()
     loss_fn = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.1)

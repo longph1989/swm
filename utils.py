@@ -20,7 +20,7 @@ def calculate_accuracy(model, dataloader, device):
             _, predicted = torch.max(model(images).data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
-    return correct / total * 100
+    return correct / total
 
 
 class MNIST_Network(nn.Module):
@@ -70,7 +70,7 @@ class Loading():
         return backdoor_dataset
 
 
-    def load_data(self, dataset, attack_spec=None, batch_size=100):
+    def load_data(self, dataset, attack_spec=None, batch_size=3200):
         transform = transforms.Compose([transforms.ToTensor()])
 
         if dataset == 'MNIST':
@@ -103,7 +103,7 @@ class Loading():
         return model
 
 
-    def load_sub_data(self, sub_model, dataset, device, clean_loader, backdoor_loader, attack_spec, batch_size=100):
+    def load_sub_data(self, sub_model, dataset, device, clean_loader, backdoor_loader, attack_spec, batch_size=3200):
         transform = transforms.Compose([transforms.ToTensor()])
         sub_model.eval()
 
