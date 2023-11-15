@@ -9,6 +9,7 @@ from collections import OrderedDict
 from wrn import WideResNet
 
 import torch.nn.functional as F
+import random
 
 
 def calculate_accuracy(model, dataloader, device):
@@ -26,28 +27,56 @@ def calculate_accuracy(model, dataloader, device):
 class MNIST_Network(nn.Module):
     def __init__(self, num_classes=10):
         super().__init__()
-        self.main = nn.Sequential(
-            nn.Conv2d(1, 16, 3, padding=1),
-            nn.BatchNorm2d(16),
-            nn.ReLU(True),
-            nn.Conv2d(16, 32, 4, padding=1, stride=2),
-            nn.BatchNorm2d(32),
-            nn.ReLU(True),
-            nn.Conv2d(32, 32, 4, padding=1, stride=2),
-            nn.BatchNorm2d(32),
-            nn.ReLU(True),
-            nn.Flatten(),
-            nn.Linear(7*7*32, 128),
-            nn.BatchNorm1d(128),
-            nn.ReLU(True),
-            nn.Linear(128, num_classes)
-        )
+        self.conv1 = nn.Conv2d(1, 16, 3, padding=1)
+        self.norm1 = nn.BatchNorm2d(16)
+        self.conv2 = nn.Conv2d(16, 32, 4, padding=1, stride=2)
+        self.norm2 = nn.BatchNorm2d(32)
+        self.conv3 = nn.Conv2d(32, 32, 4, padding=1, stride=2)
+        self.norm3 = nn.BatchNorm2d(32)
+        self.fc1 = nn.Linear(7*7*32, 128)
+        self.norm4 = nn.BatchNorm1d(128)
+        self.fc2 = nn.Linear(128, num_classes)
+
     
-    def forward(self, x):
+    def forward(self, x, mode=0, i=None):
         """
         :param x: a batch of MNIST images with shape (N, 1, H, W)
         """
-        return self.main(x)
+        if mode == 0:
+            x = self.conv1(x)
+            x = self.norm1(x)
+            x = F.relu(x)
+            x = self.conv2(x)
+            x = self.norm2(x)
+            x = F.relu(x)
+            x = self.conv3(x)
+            x = self.norm3(x)
+            x = F.relu(x)
+            x = torch.flatten(x, 1)
+            x = self.fc1(x)
+            x = self.norm4(x)
+            x = F.relu(x)
+            out = self.fc2(x)
+        elif mode == 1:
+            x = self.conv1(x)
+            x = self.norm1(x)
+            x = F.relu(x)
+            x = self.conv2(x)
+            x = self.norm2(x)
+            x = F.relu(x)
+            x = self.conv3(x)
+            x = self.norm3(x)
+            x = F.relu(x)
+            x = torch.flatten(x, 1)
+            x = self.fc1(x)
+            x = self.norm4(x)
+            out = F.relu(x)
+        elif mode == 2:
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            mask = (1.0 - torch.eye(128)[i]).to(device)
+            out = F.linear(x, self.fc2.weight * mask, self.fc2.bias)
+
+        return out
 
 
 class Loading():
@@ -70,7 +99,15 @@ class Loading():
         return backdoor_dataset
 
 
-    def load_data(self, dataset, attack_spec=None, batch_size=3200):
+    def __create_poison_dataset(self, clean_dataset, attack_spec, poison_ratio):
+        target_label = attack_spec['target_label']
+        backdoor_dataset = [(self.__apply_trigger(clean_image, attack_spec), target_label)
+                              if random.random() < poison_ratio else (clean_image, clean_label)
+                              for clean_image, clean_label in clean_dataset]
+        return backdoor_dataset
+
+
+    def load_data(self, dataset, attack_spec=None, batch_size=64):
         transform = transforms.Compose([transforms.ToTensor()])
 
         if dataset == 'MNIST':
@@ -88,79 +125,17 @@ class Loading():
 
         return clean_loader, backdoor_loader
 
-    
-    def load_model(self, model_class, name, *args, **kwargs):
-        if not os.path.exists(name):
-            raise FileNotFoundError(f"No such model file: {name}")
-        model = model_class(*args, **kwargs)
 
-        state_dict = torch.load(name)
-        if isinstance(state_dict, OrderedDict):
-            model.load_state_dict(state_dict)
-        else:
-            model.load_state_dict(state_dict.state_dict())
-        
-        return model
-
-
-    def load_sub_data(self, sub_model, dataset, device, clean_loader, backdoor_loader, attack_spec, batch_size=3200):
+    def load_poison_data(self, dataset, attack_spec, batch_size=64):
         transform = transforms.Compose([transforms.ToTensor()])
-        sub_model.eval()
 
-        x_clean_lst, y_clean_lst = list(), list()
+        if dataset == 'MNIST':
+            clean_dataset = MNIST(root='./mnist', train=True, download=True, transform=transform)
+        elif dataset == 'CIFAR-10':
+            clean_dataset = CIFAR10(root='./cifar10', train=True, download=True, transform=transform)
 
-        for batch, (x, y) in enumerate(clean_loader):
-            x, y = x.to(device), y.to(device)
-            
-            if dataset == 'MNIST':
-                x_clean_lst.extend(sub_model(x).detach().cpu().numpy())
-            elif dataset == 'CIFAR-10':
-                out_x = F.avg_pool2d(sub_model(x), 8)
-                out_x = out_x.view(-1, 128)
-                x_clean_lst.extend(out_x.detach().cpu().numpy())
+        poison_ratio = 0.1
+        poison_dataset = self.__create_poison_dataset(clean_dataset, attack_spec, poison_ratio)
+        poison_loader = DataLoader(poison_dataset, batch_size=batch_size, shuffle=False)
 
-            y_clean_lst.extend(y.detach().cpu().numpy())
-
-        x_clean_tensor = torch.Tensor(np.array(x_clean_lst))
-        y_clean_tensor = torch.Tensor(np.array(y_clean_lst)).type(torch.LongTensor)
-
-        sub_clean_dataset = TensorDataset(x_clean_tensor, y_clean_tensor)
-        sub_clean_loader = DataLoader(sub_clean_dataset, batch_size=batch_size, shuffle=False)
-
-        x_backdoor_lst, y_backdoor_lst = list(), list()
-
-        for batch, (x, y) in enumerate(backdoor_loader):
-            x, y = x.to(device), y.to(device)
-
-            if dataset == 'MNIST':
-                x_backdoor_lst.extend(sub_model(x).detach().cpu().numpy())
-            elif dataset == 'CIFAR-10':
-                out_x = F.avg_pool2d(sub_model(x), 8)
-                out_x = out_x.view(-1, 128)
-                x_backdoor_lst.extend(out_x.detach().cpu().numpy())
-
-            y_backdoor_lst.extend(y.detach().cpu().numpy())
-
-        x_backdoor_tensor = torch.Tensor(np.array(x_backdoor_lst))
-        y_backdoor_tensor = torch.Tensor(np.array(y_backdoor_lst)).type(torch.LongTensor)
-
-        sub_backdoor_data = TensorDataset(x_backdoor_tensor, y_backdoor_tensor)
-        sub_backdoor_loader = DataLoader(sub_backdoor_data, batch_size=batch_size, shuffle=False)
-
-        return sub_clean_loader, sub_backdoor_loader
-
-    
-    def load_sub_models(self, model):
-        if isinstance(model, MNIST_Network):
-            sub_model_layers1 = list(model.main.children())[:-1]
-            sub_model_layers2 = list(model.main.children())[-1]
-        elif isinstance(model, WideResNet):
-            sub_model_layers1 = list(model.children())[:-1]
-            sub_model_layers2 = list(model.children())[-1]
-        else:
-            raise ValueError("Unsupported model type.")
-        
-        sub_model1 = nn.Sequential(*sub_model_layers1)
-        sub_model2 = nn.Sequential(sub_model_layers2)
-
-        return sub_model1, sub_model2
+        return poison_loader
